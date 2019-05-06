@@ -37,8 +37,10 @@ import org.junit.jupiter.api.extension.TestInstancePostProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.ParameterResolutionDelegate;
 import org.springframework.context.ApplicationContext;
+import org.springframework.core.SpringProperties;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.lang.Nullable;
+import org.springframework.test.context.AutowireTestConstructor;
 import org.springframework.test.context.TestContextManager;
 import org.springframework.util.Assert;
 
@@ -157,11 +159,11 @@ public class SpringExtension implements BeforeAllCallback, AfterAllCallback, Tes
 	@Override
 	public boolean supportsParameter(ParameterContext parameterContext, ExtensionContext extensionContext) {
 		Parameter parameter = parameterContext.getParameter();
-		int index = parameterContext.getIndex();
-		Executable exec = parameter.getDeclaringExecutable();
-		return ((exec instanceof Constructor && AnnotatedElementUtils.hasAnnotation(exec, Autowired.class)) ||
+		Executable executable = parameter.getDeclaringExecutable();
+		Class<?> testClass = extensionContext.getRequiredTestClass();
+		return (isAutowirableConstructor(executable, testClass) ||
 				ApplicationContext.class.isAssignableFrom(parameter.getType()) ||
-				ParameterResolutionDelegate.isAutowirable(parameter, index));
+				ParameterResolutionDelegate.isAutowirable(parameter, parameterContext.getIndex()));
 	}
 
 	/**
@@ -207,6 +209,28 @@ public class SpringExtension implements BeforeAllCallback, AfterAllCallback, Tes
 
 	private static Store getStore(ExtensionContext context) {
 		return context.getRoot().getStore(NAMESPACE);
+	}
+
+	/**
+	 * Determine if the test class constructor is autowirable.
+	 * @since 5.2
+	 */
+	private static boolean isAutowirableConstructor(Executable executable, Class<?> testClass) {
+		// Not a constructor?
+		if (!(executable instanceof Constructor)) {
+			return false;
+		}
+		// Is the constructor annotated with @Autowired?
+		if (AnnotatedElementUtils.hasAnnotation(executable, Autowired.class)) {
+			return true;
+		}
+		// Is the test class annotated with @AutowireTestConstructor?
+		AutowireTestConstructor annotation = AnnotatedElementUtils.findMergedAnnotation(testClass, AutowireTestConstructor.class);
+		if (annotation != null) {
+			return annotation.value();
+		}
+		// Else use global default.
+		return SpringProperties.getFlag(AutowireTestConstructor.TEST_CONSTRUCTOR_AUTOWIRE_PROPERTY_NAME);
 	}
 
 }
